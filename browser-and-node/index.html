@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HTTP request from WASM in quickjs-emscripten</title>
+    <script type="module">
+        // Based on examples from quickjs-emscripten's README
+        // console.log() :   https://github.com/justjake/quickjs-emscripten/tree/v0.29.1#exposing-apis
+        // resolvePromise(): https://github.com/justjake/quickjs-emscripten/tree/v0.29.1#contextresolvepromisehandle
+        import {getQuickJS} from 'https://esm.sh/quickjs-emscripten@0.29.1'
+
+        const QuickJS = await getQuickJS();
+        const vm = QuickJS.newContext();
+
+        const logHandle = vm.newFunction('log', (...args) => {
+            const nativeArgs = args.map(vm.dump);
+            console.log('QuickJS: ', ...nativeArgs);
+        })
+        const consoleHandle = vm.newObject();
+        vm.setProp(consoleHandle, 'log', logHandle);
+        vm.setProp(vm.global, 'console', consoleHandle);
+        consoleHandle.dispose();
+        logHandle.dispose();
+
+        const fetchHandle = vm.newFunction('fetch', (urlHandle) => {
+            const url = vm.getString(urlHandle);
+            const promise = vm.newPromise();
+
+            fetch(url).then(res => res.text()).then(txt => promise.resolve(vm.newString(txt || '')));
+
+            promise.settled.then(vm.runtime.executePendingJobs);
+            return promise.handle;
+        })
+        fetchHandle.consume((handle) => vm.setProp(vm.global, 'fetch', handle));
+
+        const result = vm.evalCode(`(async () => {
+  const txt = await fetch('https://httpbin.org/anything');
+  console.log(txt);
+})()`);
+        const promiseHandle = vm.unwrapResult(result);
+
+        await vm.resolvePromise(promiseHandle);
+
+        promiseHandle.dispose();
+        vm.dispose();
+    </script>
+</head>
+<body>
+<h2>HTTP Request from inside WASM using quickjs-emscripten</h2>
+
+<p>This example uses <a href="https://github.com/justjake/quickjs-emscripten">quickjs-emscripten</a>.</p>
+
+<p>See the output in browser developer console.</p>
+
+<p>Actual code:</p>
+<pre>
+
+const txt = await fetch('https://httpbin.org/anything');
+console.log(txt);
+
+</pre>
+<footer><small>Created for (wannabe-awesome) <a href="https://github.com/vasilev/HTTP-request-from-inside-WASM">list</a></small>
+</footer>
+</body>
+</html>
